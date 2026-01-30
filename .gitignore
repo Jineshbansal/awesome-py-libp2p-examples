@@ -1,0 +1,52 @@
+# --------------------
+# Python
+# --------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# --------------------
+# Virtual Environments
+# --------------------
+venv/
+.venv/
+env/
+.env/
+ENV/
+.python-version
+
+# --------------------
+# Pytest / Coverage
+# --------------------
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --------------------
+# Logs
+# --------------------
+*.log
+
+# --------------------
+# OS / Editor
+# --------------------
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# --------------------
+# IPython / Jupyter
+# --------------------
+.ipynb_checkpoints/
+
+# --------------------
+# Misc
+# --------------------
+server_node_addr.txt
