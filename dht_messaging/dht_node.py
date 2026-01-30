@@ -12,16 +12,12 @@ from libp2p.records.validator import Validator
 from libp2p.tools.async_service import background_trio_service
 from libp2p.peer.peerinfo import info_from_p2p_addr
 
-# -------------------------
-# Logging
-# -------------------------
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("dht-node")
 
-# -------------------------
-# Validator
-# -------------------------
+
 
 class PeerValidator(Validator):
     def validate(self, key: str, value: bytes) -> None:
@@ -35,9 +31,7 @@ class PeerValidator(Validator):
         return 0
 
 
-# -------------------------
-# Exported helper
-# -------------------------
+
 
 async def resolve_peer(dht: KadDHT, peer_id: str) -> Optional[Dict]:
     try:
@@ -50,9 +44,7 @@ async def resolve_peer(dht: KadDHT, peer_id: str) -> Optional[Dict]:
         return None
 
 
-# -------------------------
-# EXPORTED ENTRY FUNCTION
-# -------------------------
+
 
 async def start_dht_node(
     username: str,
