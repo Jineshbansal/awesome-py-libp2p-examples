@@ -3,7 +3,6 @@ Network layer for decentralized chat using libp2p and GossipSub.
 """
 
 import logging
-from typing import Optional
 
 from libp2p import new_host
 from libp2p.crypto.secp256k1 import create_new_key_pair
@@ -28,10 +27,8 @@ class ChatNetwork:
         
     async def setup_host(self):
         """Initialize libp2p host with GossipSub"""
-        # Create basic peerstore (in-memory)
         peerstore = PeerStore()
         
-        # Create host with peerstore
         self.host = new_host(
             key_pair=self.key_pair,
             listen_addrs=[Multiaddr(f"/ip4/0.0.0.0/tcp/{self.port}")],
@@ -39,26 +36,22 @@ class ChatNetwork:
             peerstore_opt=peerstore,
         )
         
-        # Create GossipSub with required parameters
+        
         gossipsub = GossipSub(
             protocols=[GOSSIPSUB_PROTOCOL_ID],
-            degree=3,  
-            degree_low=2,  
-            degree_high=4,  
+            degree=10,
+            degree_low=9,
+            degree_high=11,
+            time_to_live=30,
+            gossip_window=3,
+            gossip_history=5,
+            heartbeat_initial_delay=0.1,
+            heartbeat_interval=0.5,
         )
         self.pubsub = Pubsub(self.host, gossipsub)
         
         logger.info(f"Host started: {self.host.get_id()}")
-        
-        # Print all listening multiaddrs for easy peer connection
-        addrs = self.host.get_addrs()
-        if addrs:
-            for addr in addrs:
-                full_addr = f"{addr}/p2p/{self.host.get_id()}"
-                print(f"Listening on: {full_addr}")
-        else:
-            expected_addr = f"/ip4/127.0.0.1/tcp/{self.port}/p2p/{self.host.get_id()}"
-            print(f"Listening on: {expected_addr}")
+        print(f"Listening on: /ip4/127.0.0.1/tcp/{self.port}/p2p/{self.host.get_id()}")
             
     async def connect_to_peer(self, peer_addr: str):
         """Connect to a peer using their multiaddr"""
@@ -71,7 +64,7 @@ class ChatNetwork:
             logger.error(f"Failed to connect to {peer_addr}: {e}")
             
     async def subscribe_to_chat(self):
-        """Subscribe to chat topic and return subscription"""
+        """Subscribe to chat topic"""
         subscription = await self.pubsub.subscribe(CHAT_TOPIC)
         logger.info(f"Subscribed to topic: {CHAT_TOPIC}")
         return subscription
@@ -81,36 +74,16 @@ class ChatNetwork:
         await self.pubsub.publish(CHAT_TOPIC, message.encode('utf-8'))
         
     def get_connected_peers(self):
-        """Get list of connected peers"""
+        """Get list of directly connected peers"""
         if not self.host:
             return []
         return list(self.host.get_network().connections.keys())
         
-    def get_mesh_status(self):
-        """Get GossipSub mesh status for debugging"""
+    def get_mesh_peers(self):
+        """Get peers in the GossipSub mesh for our topic"""
         if not self.pubsub:
-            return None
-            
+            return []
         gossipsub = self.pubsub.router
-        
-        mesh_info = {
-            'topic': CHAT_TOPIC,
-            'mesh_peers': [],
-            'fanout_peers': [],
-            'all_subscribers': []
-        }
-        
-        try:
-            if hasattr(gossipsub, 'mesh') and CHAT_TOPIC in gossipsub.mesh:
-                mesh_info['mesh_peers'] = list(gossipsub.mesh[CHAT_TOPIC])
-                
-            if hasattr(gossipsub, 'fanout') and CHAT_TOPIC in gossipsub.fanout:
-                mesh_info['fanout_peers'] = list(gossipsub.fanout[CHAT_TOPIC])
-                
-            if hasattr(gossipsub, 'peer_topics'):
-                mesh_info['all_subscribers'] = list(gossipsub.peer_topics.get(CHAT_TOPIC, set()))
-                
-        except Exception as e:
-            logger.error(f"Error accessing mesh status: {e}")
-            
-        return mesh_info
+        if hasattr(gossipsub, 'mesh') and CHAT_TOPIC in gossipsub.mesh:
+            return list(gossipsub.mesh[CHAT_TOPIC])
+        return []

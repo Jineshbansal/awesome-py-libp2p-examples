@@ -45,15 +45,17 @@ class ReputationSystem:
         """Validate message based on peer reputation and content"""
         reputation = await self.get_peer_reputation(peer_id)
         
+        # Basic reputation threshold check
         if reputation < REPUTATION_THRESHOLD:
             logger.info(f"Message from low-reputation peer {peer_id[:8]} (rep: {reputation:.1f}) filtered")
             return False
             
-        # Spam detection based on message frequency
+        # Simple spam detection - check message frequency
         now = time.time()
         if peer_id not in self.message_history:
             self.message_history[peer_id] = []
             
+        # Remove old messages (older than MESSAGE_HISTORY_WINDOW)
         self.message_history[peer_id] = [
             msg_time for msg_time in self.message_history[peer_id] 
             if now - msg_time < MESSAGE_HISTORY_WINDOW
@@ -61,14 +63,14 @@ class ReputationSystem:
         
         # Check for spam (more than MAX_MESSAGES_PER_MINUTE messages per minute)
         if len(self.message_history[peer_id]) >= MAX_MESSAGES_PER_MINUTE:
-            await self.update_peer_reputation(peer_id, SPAM_PENALTY) 
+            await self.update_peer_reputation(peer_id, SPAM_PENALTY)  # Penalty for spam
             logger.info(f"Spam detected from {peer_id[:8]}, reputation decreased")
             return False
             
-       
+        # Record this message
         self.message_history[peer_id].append(now)
         
-       
+        # Reward for valid message
         await self.update_peer_reputation(peer_id, NORMAL_MESSAGE_REWARD)
         
         return True
@@ -76,11 +78,11 @@ class ReputationSystem:
     def get_reputation_indicator(self, reputation: float) -> str:
         """Get visual indicator for reputation level"""
         if reputation >= 80:
-            return "★"  # High reputation
+            return "high"  # High reputation
         elif reputation >= REPUTATION_THRESHOLD:
-            return "☆"  # Normal reputation
+            return "normal"  # Normal reputation
         else:
-            return "⚠"  # Low reputation
+            return "low"  # Low reputation
             
     def get_reputation_status(self, reputation: float) -> str:
         """Get text status for reputation level"""
