@@ -5,7 +5,7 @@ A spam-resistant chat application using libp2p's GossipSub protocol with peer sc
 ## Features
 
 - **GossipSub messaging**: Decentralized pub/sub for message distribution
-- **Peer Scoring**: Uses libp2p's gossipsub v1.1 peer scoring to penalize bad actors
+- **Peer Scoring**: Uses libp2p's gossipsub peer scoring to penalize bad actors
 - **Reputation Persistence**: Stores peer reputations to disk across sessions
 - **Spam Detection**: Rate-limits messages (>10/min) and down-scores spammers
 - **Persistent Identity**: Each peer maintains same ID across restarts (per-port keys)
@@ -70,3 +70,10 @@ python main.py -p 9001 -n Bob -c /ip4/127.0.0.1/tcp/9000/p2p/<PEER_ID_FROM_TERMI
 - Publish threshold: -50 (can't publish below this)
 - Gossip threshold: -100 (excluded from gossip)
 - Graylist threshold: -200 (fully ignored)
+
+
+## Demo Video
+
+
+https://github.com/user-attachments/assets/c56a6eca-ff95-466b-b5bc-303b91647e9f
+
