@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "p2p-ipfs-federated"
+version = "0.1.0"
+requires-python = ">=3.11"
+description = "Hybrid P2P + IPFS federated learning with model checkpoint persistence"
+dependencies = [
+    "trio>=0.25",
+    "python-dotenv",
+    "requests>=2.28",
+    "rich",
+    "pycryptodome>=3.19",
+]
+
+[project.optional-dependencies]
+p2p = [
+    "libp2p @ git+https://github.com/lla-dane/py-libp2p.git@fed-learn",
+]
+dev = [
+    "pytest",
+    "black",
+    "ruff",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["p2p_ipfs_federated"]
+log_cli = true
+log_cli_level = "INFO"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
