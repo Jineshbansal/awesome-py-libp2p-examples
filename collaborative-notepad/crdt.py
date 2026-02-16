@@ -1,12 +1,4 @@
-"""
-Operation-based CRDT for collaborative text editing.
-
-Each character is identified by a unique OpID = (lamport_clock, peer_id, seq).
-This gives a total ordering across all peers, allowing concurrent inserts to
-converge deterministically.
-
-Operations are idempotent — applying the same op twice is a no-op.
-"""
+"""Operation-based sequence CRDT for collaborative text editing."""
 
 from __future__ import annotations
 
@@ -18,11 +10,7 @@ from typing import Any
 
 @dataclass(frozen=True, order=True)
 class OpID:
-    """Globally unique, totally ordered operation identifier.
-
-    Ordering: lamport_clock first, then peer_id (lexicographic), then seq.
-    This ensures all peers converge to the same document state.
-    """
+    """Globally unique, totally ordered operation identifier."""
     lamport: int
     peer_id: str
     seq: int
@@ -41,11 +29,11 @@ class OpID:
 @dataclass
 class Op:
     """A single insert or delete operation."""
-    op_type: str  # "INSERT" or "DELETE"
+    op_type: str
     op_id: OpID
-    char: str = ""          # The character (for INSERT)
-    parent_id: OpID | None = None  # Insert after this op (None = beginning)
-    target_id: OpID | None = None  # The op to delete (for DELETE)
+    char: str = ""
+    parent_id: OpID | None = None
+    target_id: OpID | None = None
     timestamp: float = field(default_factory=time.time)
 
     def to_dict(self) -> dict[str, Any]:
@@ -103,21 +91,12 @@ class CharItem:
 
 
 class TextCRDT:
-    """
-    A simple operation-based sequence CRDT for text.
-
-    Characters are stored as an ordered list. Each character has a unique OpID.
-    Inserts specify a parent (the character after which to insert).
-    Deletes mark characters as tombstoned.
-
-    The ordering of concurrent inserts is resolved by OpID comparison,
-    which is deterministic across all peers.
-    """
+    """Operation-based sequence CRDT for collaborative text."""
 
     def __init__(self, peer_id: str):
         self.peer_id = peer_id
         self.items: list[CharItem] = []
-        self.applied_ops: set[tuple[int, str, int]] = set()  # (lamport, peer, seq)
+        self.applied_ops: set[tuple[int, str, int]] = set()
         self.lamport_clock: int = 0
         self.seq_counter: int = 0
 
@@ -146,51 +125,30 @@ class TextCRDT:
         return None
 
     def _find_insert_position(self, parent_id: OpID | None, new_op_id: OpID) -> int:
-        """Find where to insert a new character.
-
-        After the parent, but before any existing character whose OpID is
-        less than the new one (to maintain deterministic ordering of
-        concurrent inserts after the same parent).
-        """
+        """Find where to insert a new character after the given parent."""
         if parent_id is None:
-            # Insert at the beginning — but after any existing items that
-            # were also inserted at the beginning with a smaller OpID.
             pos = 0
             while pos < len(self.items):
-                # Walk past items whose parent is also None and whose
-                # op_id is greater than ours (they sort after us).
                 if self.items[pos].op_id > new_op_id:
                     break
-                # If the item's op_id is less than ours, we insert after it
-                # only if it's also a "beginning" insert. But since we can't
-                # track parent info in CharItem, we use a simpler approach:
-                # just insert at position 0 and let OpID ordering resolve ties.
                 break
             return pos
 
         parent_idx = self._find_index(parent_id)
         if parent_idx is None:
-            # Parent not found — append at end (will be corrected on resync)
             return len(self.items)
 
-        # Insert after parent. Walk forward past any items that were also
-        # inserted after the same point but have a greater OpID (they sort first).
         pos = parent_idx + 1
         while pos < len(self.items):
             if self.items[pos].op_id > new_op_id:
-                # This item has a higher OpID, so it was inserted concurrently
-                # and should come after our new item in the sequence.
                 break
             pos += 1
         return pos
-
-    # --- Local operations (user typing) ---
 
     def local_insert(self, position: int, char: str) -> Op:
         """Insert a character at a visible position. Returns the op to broadcast."""
         op_id = self._tick()
 
-        # Find the parent: the visible character at (position - 1)
         parent_id = None
         if position > 0:
             visible_count = 0
@@ -201,7 +159,6 @@ class TextCRDT:
                         parent_id = item.op_id
                         break
 
-        # Find actual insert position in items list
         insert_idx = self._find_insert_position(parent_id, op_id)
         self.items.insert(insert_idx, CharItem(op_id=op_id, char=char))
         self.applied_ops.add(self._op_key(op_id))
@@ -220,7 +177,7 @@ class TextCRDT:
         for item in self.items:
             if not item.deleted:
                 visible_count += 1
-                if visible_count == position + 1:  # position is 0-indexed
+                if visible_count == position + 1:
                     op_id = self._tick()
                     item.deleted = True
                     self.applied_ops.add(self._op_key(op_id))
@@ -232,13 +189,11 @@ class TextCRDT:
                     )
         return None
 
-    # --- Remote operations (from other peers) ---
-
     def apply_remote_op(self, op: Op) -> bool:
         """Apply a remote operation. Returns True if applied (not a duplicate)."""
         key = self._op_key(op.op_id)
         if key in self.applied_ops:
-            return False  # Idempotent: already applied
+            return False
 
         self._update_clock(op.op_id.lamport)
 
@@ -250,15 +205,9 @@ class TextCRDT:
                 idx = self._find_index(op.target_id)
                 if idx is not None:
                     self.items[idx].deleted = True
-                # If target not found, the delete is a no-op (character may
-                # have been inserted by an op we haven't received yet — in a
-                # production system we'd buffer this, but for the demo it's
-                # safe to drop).
 
         self.applied_ops.add(key)
         return True
-
-    # --- Serialization ---
 
     def to_plaintext(self) -> str:
         """Render the current visible text."""
