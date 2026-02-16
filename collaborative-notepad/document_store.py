@@ -1,10 +1,4 @@
-"""
-SQLite-backed document persistence for the collaborative notepad.
-
-Stores the full CRDT state and individual operations so that:
-- Documents survive restarts
-- Late-joining peers can catch up via operation replay
-"""
+"""SQLite-backed document persistence for the collaborative notepad."""
 
 from __future__ import annotations
 
@@ -26,7 +20,7 @@ class DocumentStore:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(str(self.db_path))
-        self.conn.execute("PRAGMA journal_mode=WAL")  # better concurrency
+        self.conn.execute("PRAGMA journal_mode=WAL")
         self._create_tables()
 
     def _create_tables(self) -> None:
@@ -50,8 +44,6 @@ class DocumentStore:
                 ON operations(doc_id, timestamp);
         """)
         self.conn.commit()
-
-    # --- Document state ---
 
     def save_state(self, doc_id: str, crdt: TextCRDT) -> None:
         """Persist the full CRDT state for a document."""
@@ -86,8 +78,6 @@ class DocumentStore:
         ).fetchone()
         return row is not None
 
-    # --- Operation log ---
-
     def store_op(self, doc_id: str, op: Op) -> None:
         """Store a single operation for replay purposes."""
         op_key = f"{op.op_id.lamport}:{op.op_id.peer_id}:{op.op_id.seq}"
@@ -101,7 +91,7 @@ class DocumentStore:
             )
             self.conn.commit()
         except sqlite3.IntegrityError:
-            pass  # duplicate op — idempotent
+            pass
 
     def get_ops_since(self, doc_id: str, since_ts: float) -> list[Op]:
         """Retrieve all operations after a given timestamp."""
@@ -125,8 +115,6 @@ class DocumentStore:
             (doc_id,),
         ).fetchone()
         return row[0] if row else 0
-
-    # --- Housekeeping ---
 
     def list_documents(self) -> list[dict]:
         """List all stored documents with metadata."""
