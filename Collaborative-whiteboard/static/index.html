@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Collaborative Whiteboard</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: #f5f5f5;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      .toolbar {
+        background: #333;
+        padding: 10px 20px;
+        display: flex;
+        gap: 15px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .toolbar label {
+        color: #fff;
+        font-size: 14px;
+      }
+      .toolbar input[type="color"] {
+        width: 40px;
+        height: 30px;
+        border: none;
+        cursor: pointer;
+      }
+      .toolbar input[type="range"] {
+        width: 100px;
+      }
+      .toolbar button {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      .btn-tool {
+        background: #555;
+        color: #fff;
+      }
+      .btn-tool.active {
+        background: #007bff;
+      }
+      .btn-clear {
+        background: #dc3545;
+        color: #fff;
+      }
+      .status {
+        margin-left: auto;
+        color: #fff;
+        font-size: 12px;
+      }
+      .status-dot {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-right: 5px;
+      }
+      .status-dot.connected {
+        background: #28a745;
+      }
+      .status-dot.disconnected {
+        background: #dc3545;
+      }
+      .canvas-container {
+        flex: 1;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 20px;
+      }
+      #whiteboard {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        cursor: crosshair;
+      }
+      .peer-cursor {
+        position: absolute;
+        pointer-events: none;
+      }
+      .peer-cursor::before {
+        content: "";
+        position: absolute;
+        width: 0;
+        height: 0;
+        border-left: 6px solid transparent;
+        border-right: 6px solid transparent;
+        border-bottom: 12px solid var(--cursor-color, #007bff);
+        transform: rotate(-45deg);
+      }
+      .peer-cursor-label {
+        position: absolute;
+        top: 15px;
+        left: 10px;
+        font-size: 10px;
+        background: var(--cursor-color, #007bff);
+        color: #fff;
+        padding: 2px 6px;
+        border-radius: 3px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="toolbar">
+      <button class="btn-tool active" data-tool="stroke">✏️ Draw</button>
+      <button class="btn-tool" data-tool="rect">▢ Rectangle</button>
+      <button class="btn-tool" data-tool="circle">○ Circle</button>
+      <button class="btn-tool" data-tool="line">/ Line</button>
+      <label
+        >Color: <input type="color" id="colorPicker" value="#000000"
+      /></label>
+      <label
+        >Size: <input type="range" id="strokeWidth" min="1" max="20" value="3"
+      /></label>
+      <button class="btn-clear" id="clearBtn">🗑️ Clear</button>
+      <div class="status">
+        <span class="status-dot disconnected" id="statusDot"></span>
+        <span id="statusText">Disconnected</span>
+      </div>
+    </div>
+    <div class="canvas-container">
+      <canvas id="whiteboard" width="1200" height="700"></canvas>
+    </div>
+    <script>
+      const canvas = document.getElementById("whiteboard");
+      const ctx = canvas.getContext("2d");
+      const colorPicker = document.getElementById("colorPicker");
+      const strokeWidthInput = document.getElementById("strokeWidth");
+      const clearBtn = document.getElementById("clearBtn");
+      const statusDot = document.getElementById("statusDot");
+      const statusText = document.getElementById("statusText");
+      const toolButtons = document.querySelectorAll(".btn-tool");
+
+      let ws = null,
+        isDrawing = false,
+        currentTool = "stroke";
+      let startX,
+        startY,
+        currentStroke = [],
+        shapes = [],
+        peerCursors = {};
+
+      toolButtons.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          toolButtons.forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          currentTool = btn.dataset.tool;
+        });
+      });
+
+      function connect() {
+        ws = new WebSocket(`ws://${window.location.hostname}:8766`);
+        ws.onopen = () => {
+          statusDot.classList.remove("disconnected");
+          statusDot.classList.add("connected");
+          statusText.textContent = "Connected";
+        };
+        ws.onclose = () => {
+          statusDot.classList.remove("connected");
+          statusDot.classList.add("disconnected");
+          statusText.textContent = "Disconnected";
+          setTimeout(connect, 3000);
+        };
+        ws.onmessage = (e) => handleMessage(JSON.parse(e.data));
+      }
+
+      function handleMessage(data) {
+        if (data.type === "full_state") {
+          shapes = data.shapes || [];
+          redraw();
+        } else if (data.type === "shape_added") {
+          shapes.push(data.shape);
+          drawShape(data.shape);
+        } else if (data.type === "shape_deleted") {
+          shapes = shapes.filter((s) => s.id !== data.shape_id);
+          redraw();
+        } else if (data.type === "board_cleared") {
+          shapes = [];
+          redraw();
+        } else if (data.type === "peer_cursor") {
+          updatePeerCursor(data.peer_id, data.x, data.y);
+        }
+      }
+
+      function send(data) {
+        if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
+      }
+
+      function drawShape(shape) {
+        ctx.strokeStyle = shape.color;
+        ctx.lineWidth = shape.stroke_width;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        if (shape.shape_type === "stroke" && shape.points?.length) {
+          ctx.beginPath();
+          ctx.moveTo(shape.points[0].x, shape.points[0].y);
+          shape.points.slice(1).forEach((p) => ctx.lineTo(p.x, p.y));
+          ctx.stroke();
+        } else if (shape.shape_type === "rect") {
+          ctx.strokeRect(shape.x, shape.y, shape.width, shape.height);
+        } else if (shape.shape_type === "circle") {
+          ctx.beginPath();
+          ctx.arc(shape.x, shape.y, shape.radius, 0, Math.PI * 2);
+          ctx.stroke();
+        } else if (shape.shape_type === "line") {
+          ctx.beginPath();
+          ctx.moveTo(shape.x, shape.y);
+          ctx.lineTo(shape.x + shape.width, shape.y + shape.height);
+          ctx.stroke();
+        }
+      }
+
+      function redraw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        shapes.filter((s) => !s.deleted).forEach(drawShape);
+      }
+
+      canvas.addEventListener("mousedown", (e) => {
+        isDrawing = true;
+        const rect = canvas.getBoundingClientRect();
+        startX = e.clientX - rect.left;
+        startY = e.clientY - rect.top;
+        currentStroke = [{ x: startX, y: startY }];
+      });
+
+      canvas.addEventListener("mousemove", (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left,
+          y = e.clientY - rect.top;
+        send({ type: "cursor", x, y });
+        if (!isDrawing) return;
+        if (currentTool === "stroke") {
+          currentStroke.push({ x, y });
+          ctx.strokeStyle = colorPicker.value;
+          ctx.lineWidth = strokeWidthInput.value;
+          ctx.lineCap = "round";
+          ctx.beginPath();
+          const last = currentStroke[currentStroke.length - 2];
+          ctx.moveTo(last.x, last.y);
+          ctx.lineTo(x, y);
+          ctx.stroke();
+        } else {
+          redraw();
+          ctx.strokeStyle = colorPicker.value;
+          ctx.lineWidth = strokeWidthInput.value;
+          if (currentTool === "rect")
+            ctx.strokeRect(startX, startY, x - startX, y - startY);
+          else if (currentTool === "circle") {
+            ctx.beginPath();
+            ctx.arc(
+              startX,
+              startY,
+              Math.hypot(x - startX, y - startY),
+              0,
+              Math.PI * 2,
+            );
+            ctx.stroke();
+          } else if (currentTool === "line") {
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(x, y);
+            ctx.stroke();
+          }
+        }
+      });
+
+      canvas.addEventListener("mouseup", (e) => {
+        if (!isDrawing) return;
+        isDrawing = false;
+        const rect = canvas.getBoundingClientRect();
+        const endX = e.clientX - rect.left,
+          endY = e.clientY - rect.top;
+        const data = {
+          type: "draw",
+          shape_type: currentTool,
+          color: colorPicker.value,
+          stroke_width: +strokeWidthInput.value,
+        };
+        if (currentTool === "stroke") data.points = currentStroke;
+        else if (currentTool === "rect")
+          Object.assign(data, {
+            x: startX,
+            y: startY,
+            width: endX - startX,
+            height: endY - startY,
+          });
+        else if (currentTool === "circle")
+          Object.assign(data, {
+            x: startX,
+            y: startY,
+            radius: Math.hypot(endX - startX, endY - startY),
+          });
+        else if (currentTool === "line")
+          Object.assign(data, {
+            x: startX,
+            y: startY,
+            width: endX - startX,
+            height: endY - startY,
+          });
+        send(data);
+        currentStroke = [];
+      });
+
+      canvas.addEventListener("mouseleave", () => {
+        isDrawing = false;
+      });
+      clearBtn.addEventListener("click", () => {
+        send({ type: "clear" });
+        shapes = [];
+        redraw();
+      });
+
+      function updatePeerCursor(peerId, x, y) {
+        let cursor = peerCursors[peerId];
+        if (!cursor) {
+          cursor = document.createElement("div");
+          cursor.className = "peer-cursor";
+          const hue =
+            [...peerId].reduce((h, c) => c.charCodeAt(0) + ((h << 5) - h), 0) %
+            360;
+          cursor.style.setProperty("--cursor-color", `hsl(${hue}, 70%, 50%)`);
+          const label = document.createElement("span");
+          label.className = "peer-cursor-label";
+          label.textContent = peerId.slice(-6);
+          cursor.appendChild(label);
+          document.body.appendChild(cursor);
+          peerCursors[peerId] = cursor;
+        }
+        const rect = canvas.getBoundingClientRect();
+        cursor.style.left = rect.left + x + "px";
+        cursor.style.top = rect.top + y + "px";
+      }
+
+      connect();
+    </script>
+  </body>
+</html>
